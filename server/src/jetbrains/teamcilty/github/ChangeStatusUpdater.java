@@ -122,18 +122,16 @@ public class ChangeStatusUpdater {
       }
 
       public void scheduleChangeStarted(@NotNull RepositoryVersion version, @NotNull SRunningBuild build) {
-        scheduleChangeUpdate(version, build, "Started TeamCity Build " + build.getFullName(), GitHubChangeState.Pending);
+        scheduleChangeUpdate(version, build, "Started - TeamCity Build " + build.getFullName(), GitHubChangeState.Pending);
       }
 
       public void scheduleChangeCompeted(@NotNull RepositoryVersion version, @NotNull SRunningBuild build) {
         GitHubChangeState status = build.getStatusDescriptor().isSuccessful() ? GitHubChangeState.Success : GitHubChangeState.Error;
         String text = build.getStatusDescriptor().getText();
-        if (text != null) {
-          text = ": " + text;
-        } else {
+        if (text == null) {
           text = "";
         }
-        scheduleChangeUpdate(version, build, "Finished TeamCity Build " + build.getFullName() + " " + text, status);
+        scheduleChangeUpdate(version, build, text + " - TeamCity Build " + build.getFullName(), status);
       }
 
       private void scheduleChangeUpdate(@NotNull final RepositoryVersion version,
