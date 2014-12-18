@@ -17,6 +17,8 @@
 package jetbrains.teamcilty.github;
 
 import com.intellij.openapi.diagnostic.Logger;
+import jetbrains.buildServer.BuildProblemData;
+import jetbrains.buildServer.BuildProblemTypes;
 import jetbrains.buildServer.messages.Status;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.serverSide.executors.ExecutorServices;
@@ -32,6 +34,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -143,17 +148,6 @@ public class ChangeStatusUpdater {
 
         myExecutor.submit(ExceptionUtil.catchAll("set change status on github", new Runnable() {
           @NotNull
-          private String getFailureText(@Nullable final TestFailureInfo failureInfo) {
-            final String no_data = "<no details avaliable>";
-            if (failureInfo == null) return no_data;
-
-            final String stacktrace = failureInfo.getShortStacktrace();
-            if (stacktrace == null || StringUtil.isEmptyOrSpaces(stacktrace)) return no_data;
-
-            return stacktrace;
-          }
-
-          @NotNull
           private String getFriendlyDuration(final long seconds) {
             long second = seconds % 60;
             long minute = (seconds / 60) % 60;
@@ -168,7 +162,14 @@ public class ChangeStatusUpdater {
                                     boolean completed,
                                     @NotNull String hash) {
             final StringBuilder comment = new StringBuilder();
-            comment.append("TeamCity ");
+
+            if (completed) {
+              comment.append("**").append(build.getStatusDescriptor().getStatus().getText()).append("**");
+            } else {
+              comment.append("Started");
+            }
+
+            comment.append(" - TeamCity ");
             final SBuildType bt = build.getBuildType();
             if (bt != null) {
               comment.append(bt.getFullName());
@@ -177,46 +178,70 @@ public class ChangeStatusUpdater {
             comment.append(build.getBuildNumber());
             comment.append("](");
             comment.append(getViewResultsUrl(build));
-            comment.append(") ");
-
-            if (completed) {
-              comment.append("outcome was **").append(build.getStatusDescriptor().getStatus().getText()).append("**");
-            } else {
-              comment.append("is now running");
-            }
-
+            comment.append(") for ");
+            comment.append(hash);
             comment.append("\n");
 
-            final String text = build.getStatusDescriptor().getText();
-            if (completed && text != null) {
-              comment.append("Summary: ");
-              comment.append(text);
-              comment.append(" Build time: ");
+            if (completed) {
+              ShortStatistics shortStatistics = build.getShortStatistics();
+              comment.append("Tests: ");
+              comment.append(shortStatistics.getAllTestCount());
+              comment.append(", ");
+              comment.append(shortStatistics.getFailedTestCount());
+              comment.append(" failed (");
+              comment.append(shortStatistics.getNewFailedCount());
+              comment.append(" new), ");
+              comment.append(shortStatistics.getIgnoredTestCount());
+              comment.append(" ignored. ");
+              comment.append("Build time: ");
               comment.append(getFriendlyDuration(build.getDuration()));
 
               if (build.getBuildStatus() != Status.NORMAL) {
+                BuildStatisticsOptions options = new BuildStatisticsOptions(BuildStatisticsOptions.COMPILATION_ERRORS |
+                        BuildStatisticsOptions.FIRST_FAILED_IN_BUILD | BuildStatisticsOptions.FIXED_IN_BUILD, 0);
+                BuildStatistics buildStatistics = build.getBuildStatistics(options);
 
-                final List<STestRun> failedTests = build.getFullStatistics().getFailedTests();
-                if (!failedTests.isEmpty()) {
-                  comment.append("\n### Failed tests\n");
-                  comment.append("```\n");
+                List<BuildProblemData> failureReasons = build.getFailureReasons();
+                for (BuildProblemData problemData : failureReasons) {
+                  comment.append("\n\n");
+                  comment.append(problemData.getDescription());
 
-                  for (int i = 0; i < failedTests.size(); i++) {
-                    final STestRun testRun = failedTests.get(i);
-                    comment.append("");
-                    comment.append(testRun.getTest().getName().toString());
-                    comment.append(": ");
-                    comment.append(getFailureText(testRun.getFailureInfo()));
-                    comment.append("\n\n");
-
-                    if (i == 10) {
-                      comment.append("\n##### there are ")
-                              .append(build.getFullStatistics().getFailedTestCount() - i)
-                              .append(" more failed tests, see build details\n");
-                      break;
+                  if (BuildProblemTypes.TC_COMPILATION_ERROR_TYPE.equals(problemData.getType())) {
+                    List<CompilationBlockBean> compilationErrors = buildStatistics.getCompilationErrorBlocks();
+                    for (int i = 0; i < compilationErrors.size(); i++) {
+                      CompilationBlockBean compilationBlockBean = compilationErrors.get(i);
+                      comment.append("\n* ");
+                      comment.append(compilationBlockBean.getCompilerMessages());
+                      if (i == 10) {
+                        comment.append("\n* ... ");
+                        comment.append(buildStatistics.getCompilationErrorsCount() - i);
+                        comment.append(" more\n");
+                      }
+                    }
+                  } else if (BuildProblemTypes.TC_FAILED_TESTS_TYPE.equals(problemData.getType())) {
+                    final List<STestRun> failedTests = buildStatistics.getFailedTests();
+                    final DateFormat dateFormat = SimpleDateFormat.getDateInstance(DateFormat.MEDIUM);
+                    for (int i = 0; i < failedTests.size(); i++) {
+                      comment.append("\n* ");
+                      final STestRun testRun = failedTests.get(i);
+                      if (testRun.isNewFailure())
+                        comment.append("(new) ");
+                      else if (testRun.getFirstFailed() != null) {
+                        Date finishDate = testRun.getFirstFailed().getFinishDate();
+                        comment.append("(since ");
+                        comment.append(dateFormat.format(finishDate));
+                        comment.append(") ");
+                      }
+                      comment.append(testRun.getTest().getName().toString());
+                      comment.append("\n\n");
+                      if (i == 10) {
+                        comment.append("... ");
+                        comment.append(buildStatistics.getFailedTestCount() - i);
+                        comment.append(" more\n");
+                        break;
+                      }
                     }
                   }
-                  comment.append("```\n");
                 }
               }
             }
@@ -293,7 +318,7 @@ public class ChangeStatusUpdater {
                   );
                   LOG.info("Added comment to GitHub commit: " + hash + ", buildId: " + build.getBuildId() + ", status: " + status);
                 }
-              } catch (IOException e) {
+              } catch (Exception e) {
                 LOG.warn("Failed add GitHub comment for branch: " + version.getVcsBranch() + ", buildId: " + build.getBuildId() + ", status: " + status + ". " + e.getMessage(), e);
               }
             }
