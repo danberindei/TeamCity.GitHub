@@ -262,13 +262,24 @@ public class ChangeStatusUpdater {
             }
             if (addComments) {
               try {
-                api.postComment(
-                        repositoryOwner,
-                        repositoryName,
-                        hash,
-                        getComment(version, build, status != GitHubChangeState.Pending, hash)
-                );
-                LOG.info("Added comment to GitHub commit: " + hash + ", buildId: " + build.getBuildId() + ", status: " + status);
+                String pullRequestId = api.getPullRequestId(repositoryName, version.getVcsBranch());
+                if (pullRequestId != null) {
+                  api.postPullRequestComment(
+                          repositoryOwner,
+                          repositoryName,
+                          pullRequestId,
+                          getComment(version, build, status != GitHubChangeState.Pending, hash)
+                  );
+                  LOG.info("Added comment to GitHub pull request: " + pullRequestId + ", buildId: " + build.getBuildId() + ", status: " + status);
+                } else {
+                  api.postCommitComment(
+                          repositoryOwner,
+                          repositoryName,
+                          hash,
+                          getComment(version, build, status != GitHubChangeState.Pending, hash)
+                  );
+                  LOG.info("Added comment to GitHub commit: " + hash + ", buildId: " + build.getBuildId() + ", status: " + status);
+                }
               } catch (IOException e) {
                 LOG.warn("Failed add GitHub comment for branch: " + version.getVcsBranch() + ", buildId: " + build.getBuildId() + ", status: " + status + ". " + e.getMessage(), e);
               }

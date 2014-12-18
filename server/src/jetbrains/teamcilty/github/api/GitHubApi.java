@@ -27,6 +27,10 @@ import java.util.Collection;
  * Date: 06.09.12 2:39
  */
 public interface GitHubApi {
+  @Nullable
+  String getPullRequestId(@NotNull String repoName,
+                          @NotNull String branchName);
+
   String readChangeStatus(@NotNull String repoOwner,
                           @NotNull String repositoryName,
                           @NotNull String hash) throws IOException;
@@ -84,8 +88,19 @@ public interface GitHubApi {
    * @param comment
    * @throws IOException
    */
-  public void postComment(@NotNull final String ownerName,
-                          @NotNull final String repoName,
-                          @NotNull final String hash,
-                          @NotNull final String comment) throws IOException;
+  public void postCommitComment(@NotNull final String ownerName,
+                                @NotNull final String repoName,
+                                @NotNull final String hash,
+                                @NotNull final String comment) throws IOException;
+
+  /* Post comment to pull request
+  * @param repoName
+  * @param hash
+  * @param comment
+  * @throws IOException
+  */
+  void postPullRequestComment(@NotNull String ownerName,
+                              @NotNull String repoName,
+                              @NotNull String pullRequestId,
+                              @NotNull String comment) throws IOException;
 }

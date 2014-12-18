@@ -68,7 +68,7 @@ public abstract class GitHubApiImpl implements GitHubApi {
   }
 
   @Nullable
-  private static String getPullRequestId(@NotNull String repoName,
+  public String getPullRequestId(@NotNull String repoName,
                                          @NotNull String branchName) {
     final Matcher matcher = PULL_REQUEST_BRANCH.matcher(branchName);
     if (!matcher.matches()) {
@@ -280,12 +280,37 @@ public abstract class GitHubApiImpl implements GitHubApi {
     }
   }
 
-  public void postComment(@NotNull final String ownerName,
-                          @NotNull final String repoName,
-                          @NotNull final String hash,
-                          @NotNull final String comment) throws IOException {
+  public void postCommitComment(@NotNull final String ownerName,
+                                @NotNull final String repoName,
+                                @NotNull final String hash,
+                                @NotNull final String comment) throws IOException {
 
-    final String requestUrl = myUrls.getAddCommentUrl(ownerName, repoName, hash);
+    final String requestUrl = myUrls.getAddCommitCommentUrl(ownerName, repoName, hash);
+    final GSonEntity requestEntity = new GSonEntity(myGson, new IssueComment(comment));
+    final HttpPost post = new HttpPost(requestUrl);
+    try {
+      post.setEntity(requestEntity);
+      includeAuthentication(post);
+      setDefaultHeaders(post);
+
+      logRequest(post, requestEntity.getText());
+
+      final HttpResponse execute = myClient.execute(post);
+      if (execute.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_CREATED) {
+        logFailedResponse(post, requestEntity.getText(), execute);
+        throw new IOException("Failed to complete request to GitHub. Status: " + execute.getStatusLine());
+      }
+    } finally {
+      post.abort();
+    }
+  }
+
+  public void postPullRequestComment(@NotNull final String ownerName,
+                                     @NotNull final String repoName,
+                                     @NotNull final String pullRequestId,
+                                     @NotNull final String comment) throws IOException {
+
+    final String requestUrl = myUrls.getAddPullRequestCommentUrl(ownerName, repoName, pullRequestId);
     final GSonEntity requestEntity = new GSonEntity(myGson, new IssueComment(comment));
     final HttpPost post = new HttpPost(requestUrl);
     try {
