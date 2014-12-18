@@ -20,8 +20,10 @@ import com.intellij.openapi.diagnostic.Logger;
 import jetbrains.buildServer.messages.Status;
 import jetbrains.buildServer.serverSide.*;
 import jetbrains.buildServer.serverSide.executors.ExecutorServices;
+import jetbrains.buildServer.users.SUser;
 import jetbrains.buildServer.util.ExceptionUtil;
 import jetbrains.buildServer.util.StringUtil;
+import jetbrains.buildServer.vcs.SelectPrevBuildPolicy;
 import jetbrains.teamcilty.github.api.*;
 import jetbrains.teamcilty.github.ui.UpdateChangeStatusFeature;
 import jetbrains.teamcilty.github.ui.UpdateChangesConstants;
@@ -31,6 +33,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
 /**
@@ -264,6 +267,16 @@ public class ChangeStatusUpdater {
               try {
                 String pullRequestId = api.getPullRequestId(repositoryName, version.getVcsBranch());
                 if (pullRequestId != null) {
+                  try {
+                    String pullRequestUrl = "https://github.com/" + repositoryOwner + "/" + repositoryName + "/pull/" + pullRequestId;
+                    Set<SUser> committers = build.getCommitters(SelectPrevBuildPolicy.SINCE_LAST_BUILD).getUsers();
+                    if (!committers.isEmpty()) {
+                      build.setBuildComment(committers.iterator().next(), pullRequestUrl);
+                    }
+                  } catch (Exception e) {
+                    LOG.warn("Error setting the build comment for " + pullRequestId, e);
+                  }
+
                   api.postPullRequestComment(
                           repositoryOwner,
                           repositoryName,
